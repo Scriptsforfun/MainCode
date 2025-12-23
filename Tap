@@ -2686,21 +2686,16 @@ for attempt = 1, maxRetries do
                 end
             end
         })
-        
+
         AutoEquipLowestLevelToggle = EquipBestSection:AddToggle("AutoEquipLowestLevel", {
             Title = "Auto Equip Lowest Level",
             Default = false,
             Callback = function(Value)
                 autoEquipLowestLevelEnabled = Value
 
-                -- Turn off other toggles if this one is enabled
                 if Value then
-                    if autoEquipBestEnabled then
-                        AutoEquipBestToggle:SetValue(false)
-                    end
-                    if autoEquipCalculatedBestEnabled then
-                        AutoEquipCalculatedBestToggle:SetValue(false)
-                    end
+                    if autoEquipBestEnabled then AutoEquipBestToggle:SetValue(false) end
+                    if autoEquipCalculatedBestEnabled then AutoEquipCalculatedBestToggle:SetValue(false) end
                 end
 
                 if autoEquipLowestLevelThread then
@@ -2713,97 +2708,78 @@ for attempt = 1, maxRetries do
                         local NetworkModule = require(ReplicatedStorage.Modules.Network)
                         local ReplicationModule = require(ReplicatedStorage.Game.Replication)
                         local SignalModule = require(ReplicatedStorage.Modules.Signal)
-                        local PetStats = require(ReplicatedStorage.Game.PetStats) -- Required for Max Level lookup
+                        local PetStats = require(ReplicatedStorage.Game.PetStats)
 
                         while autoEquipLowestLevelEnabled do
                             pcall(function()
                                 repeat task.wait() until ReplicationModule.Loaded and ReplicationModule.Data
                                 
-                                -- 1. Identify which pets are not max level
-                                local petList = {}
-                                local allPetsMaxLevel = true
-                                
+                                local MAX_EQUIPPED_PETS = ReplicationModule.Data.EquipLimit or 5
+                                local levelingPets = {}
+                                local maxedPets = {}
+
+                                -- Categorize all pets
                                 for petId, petData in pairs(ReplicationModule.Data.Pets) do
                                     if not petData.Locked then
                                         local petName = petData.Name
                                         local currentLevel = petData.Level or 1
-                                        
-                                        -- Dynamic Max Level Check
                                         local petRarity = PetStats:GetRarity(petName)
                                         local maxLevel = PetStats:GetMaxLevel(petRarity)
 
                                         if currentLevel < maxLevel then
-                                            allPetsMaxLevel = false
-                                            -- Add to list for sorting (only pets that need leveling)
-                                            table.insert(petList, { id = petId, level = currentLevel })
+                                            table.insert(levelingPets, { id = petId, level = currentLevel, power = petData.Power or 0 })
+                                        else
+                                            table.insert(maxedPets, { id = petId, level = currentLevel, power = petData.Power or 0 })
                                         end
                                     end
                                 end
 
-                                if allPetsMaxLevel then
-                                    -- If all non-locked pets are max level, equip the BEST pets instead
-                                    local bestPetIdsList = NetworkModule:InvokeServer("EquipBest")
-                                    if bestPetIdsList and type(bestPetIdsList) == "table" then
-                                        local bestPetSet = {}
-                                        for _, petId in ipairs(bestPetIdsList) do
-                                            bestPetSet[petId] = true
-                                        end
+                                table.sort(levelingPets, function(a, b) return a.level < b.level end)
+                                table.sort(maxedPets, function(a, b) return a.power > b.power end)
 
-                                        local currentPetData = ReplicationModule.Data.Pets
-                                        for petId, petData in pairs(currentPetData) do
-                                            if petData.Equipped and not bestPetSet[petId] then
-                                                pcall(NetworkModule.InvokeServer, NetworkModule, "Unequip", petId)
-                                                SignalModule.Fire("UnequipPetUI", petId)
-                                                task.wait(0.1)
-                                            end
-                                        end
+                                local targetPetIds = {}
+                                local currentTargetCount = 0
 
-                                        task.wait(0.5)
-
-                                        for petId, petData in pairs(currentPetData) do
-                                            if not petData.Equipped and bestPetSet[petId] then
-                                                pcall(NetworkModule.InvokeServer, NetworkModule, "Equip", petId)
-                                                SignalModule.Fire("EquipPetUI", petId)
-                                                task.wait(0.1)
-                                            end
-                                        end
+                                for i = 1, #levelingPets do
+                                    if currentTargetCount < MAX_EQUIPPED_PETS then
+                                        targetPetIds[levelingPets[i].id] = true
+                                        currentTargetCount = currentTargetCount + 1
                                     end
-                                else
-                                    -- 2. Equip the lowest level pets that still need XP
-                                    local MAX_EQUIPPED_PETS = ReplicationModule.Data.EquipLimit or 5
-                                    
-                                    -- Sort by level ascending
-                                    table.sort(petList, function(a, b) return a.level < b.level end)
+                                end
 
-                                    local targetPetIds = {}
-                                    for i = 1, math.min(MAX_EQUIPPED_PETS, #petList) do
-                                        targetPetIds[petList[i].id] = true
+                                for i = 1, #maxedPets do
+                                    if currentTargetCount < MAX_EQUIPPED_PETS then
+                                        targetPetIds[maxedPets[i].id] = true
+                                        currentTargetCount = currentTargetCount + 1
                                     end
+                                end
 
-                                    local currentPetData = ReplicationModule.Data.Pets
+                                local currentPetData = ReplicationModule.Data.Pets
 
-                                    -- Unequip those not in our target list
-                                    for petId, petData in pairs(currentPetData) do
-                                        if petData.Equipped and not targetPetIds[petId] then
-                                            pcall(NetworkModule.InvokeServer, NetworkModule, "Unequip", petId)
+                                for petId, petData in pairs(currentPetData) do
+                                    if petData.Equipped and not targetPetIds[petId] then
+                                        pcall(function()
+                                            NetworkModule:InvokeServer("Unequip", petId)
                                             SignalModule.Fire("UnequipPetUI", petId)
-                                            task.wait(0.1)
-                                        end
+                                        end)
+                                        task.wait(0.1)
                                     end
+                                end
 
-                                    task.wait(0.5)
+                                task.wait(0.3)
 
-                                    -- Equip the target lowest level pets
-                                    for petId, petData in pairs(currentPetData) do
-                                        if not petData.Equipped and targetPetIds[petId] then
-                                            pcall(NetworkModule.InvokeServer, NetworkModule, "Equip", petId)
+                                for petId, _ in pairs(targetPetIds) do
+                                    local petInfo = currentPetData[petId]
+                                    if petInfo and not petInfo.Equipped then
+                                        pcall(function()
+                                            NetworkModule:InvokeServer("Equip", petId)
                                             SignalModule.Fire("EquipPetUI", petId)
-                                            task.wait(0.1)
-                                        end
+                                        end)
+                                        task.wait(0.1)
                                     end
                                 end
                             end)
-                            task.wait(5)
+                            task.wait(5) 
                         end
                     end)
                 end
