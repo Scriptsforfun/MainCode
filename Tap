@@ -2478,7 +2478,7 @@ for attempt = 1, maxRetries do
                         AutoEquipCalculatedBestToggle:SetValue(false)
                     end
                     
-                    if value and autoEquipLowestLevelEnabled then
+                    if Value and autoEquipLowestLevelEnabled then
                         AutoEquipLowestLevelToggle:SetValue(false)
                     end
 
