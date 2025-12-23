@@ -645,7 +645,7 @@ for attempt = 1, maxRetries do
             
             local hatchAmountDropdown = EggSection:Dropdown("HatchAmountDropdown", {
                 Title = "Hatch Amount",
-                Values = {"1x", "3x", "8x"},
+                Values = {"1x", "3x", "8x", "Max"},
                 Default = "1x",
                 Multi = false,
                 Callback = function(selectedValue)
@@ -655,6 +655,18 @@ for attempt = 1, maxRetries do
                         selectedHatchAmount = 3
                     elseif selectedValue == "8x" then
                         selectedHatchAmount = 8
+                    elseif selectedValue == "Max" then
+                        local data = Replication.Data
+                        if data.MaxEggsHatch then
+                            selectedHatchAmount = data.MaxEggsHatch
+                        else
+                            local gamepasses = data.Gamepasses or {}
+                            if gamepasses.x8Egg then
+                                selectedHatchAmount = 8
+                            else
+                                selectedHatchAmount = 3
+                            end
+                        end
                     end
                 end
             })
