@@ -1799,38 +1799,101 @@ for attempt = 1, maxRetries do
                 end); return enchantList
             end
 
+            local PetStats = require(ReplicatedStorage.Game.PetStats)
+
+            local function getEffectiveMultiplier(petData)
+                if petData.Multiplier1 then 
+                    return tonumber(petData.Multiplier1) or 0 
+                end
+                
+                -- Fallback calculation based on decompiler logic
+                local petName = petData.Name or "Unknown"
+                local petTier = petData.Tier or "Normal"
+                local petLevel = petData.Level or 1
+                local globalBestMulti = (Replication.Data.BestMultiplier and Replication.Data.BestMultiplier[1]) or 0
+                local petPercentage = PetStats:GetPercentage(petName)
+
+                if petPercentage then
+                    -- Scaled / Best Pet logic
+                    local base = (globalBestMulti * petPercentage) / 100
+                    return PetStats:GetMulti(base, petTier, petLevel, petData)
+                else
+                    -- Static pet logic
+                    return PetStats:GetMulti(petData.Multi1 or 0, petTier, petLevel, petData)
+                end
+            end
+
             local function getFormattedPetList()
-                repeat task.wait() until Replication.Loaded and Replication.Data and Replication.Data.Pets; petDropdownMap = {}
-                local petsToSort = {}; for id,petData in pairs(Replication.Data.Pets) do table.insert(petsToSort, petData) end
-                table.sort(petsToSort, function(a, b) return (tonumber(a.Multiplier1) or 0) > (tonumber(b.Multiplier1) or 0) end)
-                local formattedList = {}; for i,petData in ipairs(petsToSort) do
+                repeat task.wait() until Replication.Loaded and Replication.Data and Replication.Data.Pets
+                petDropdownMap = {}
+                
+                local petsToSort = {}
+                for id, petData in pairs(Replication.Data.Pets) do 
+                    table.insert(petsToSort, petData) 
+                end
+                
+                -- Use the helper function for sorting
+                table.sort(petsToSort, function(a, b) 
+                    return getEffectiveMultiplier(a) > getEffectiveMultiplier(b) 
+                end)
+                
+                local formattedList = {}
+                for i, petData in ipairs(petsToSort) do
                     local currentEnchant = liveEnchantData[petData.Id] or petData.Enchant or ""
-                    local petString = string.format("%s (x%s)", petData.Name or "Unknown", formatNumber(tonumber(petData.Multiplier1) or 0))
-                    if currentEnchant ~= "" then petString = petString .. ": " .. currentEnchant end
-                    local finalDropdownString = string.format("%d. %s", i, petString); table.insert(formattedList, finalDropdownString); petDropdownMap[finalDropdownString] = petData.Id
-                end; return formattedList
+                    local calcMulti = getEffectiveMultiplier(petData)
+                    
+                    local petString = string.format("%s (x%s)", petData.Name or "Unknown", formatNumber(calcMulti))
+                    if currentEnchant ~= "" then 
+                        petString = petString .. ": " .. currentEnchant 
+                    end
+                    
+                    local finalDropdownString = string.format("%d. %s", i, petString)
+                    table.insert(formattedList, finalDropdownString)
+                    petDropdownMap[finalDropdownString] = petData.Id
+                end
+                return formattedList
             end
 
             local function updateEnchantStatus()
                 if not enchantStatusParagraph or autoEnchantEnabled then return end
+                
                 local crystalCount = (Replication.Data.Items and Replication.Data.Items.EnchantCrystal) or 0
-                local content = "Enchant Crystals: " .. tostring(crystalCount) .. "\n\n--- Selected Pets ---\n"; local groupedPets={}; local hasSelection=false
-                for petString,isSelected in pairs(selectedPets) do
-                    if isSelected then hasSelection=true; local petId=petDropdownMap[petString]; 
+                local content = "Enchant Crystals: " .. tostring(crystalCount) .. "\n\n--- Selected Pets ---\n"
+                local groupedPets = {}
+                local hasSelection = false
+                
+                for petString, isSelected in pairs(selectedPets) do
+                    if isSelected then 
+                        hasSelection = true
+                        local petId = petDropdownMap[petString]
+                        
                         if petId and Replication.Data.Pets[petId] then
                             local petData = Replication.Data.Pets[petId]
                             local currentEnchant = liveEnchantData[petId] or petData.Enchant or ""
-                            local multiplier = petData.Multiplier1 and formatNumber(tonumber(petData.Multiplier1)) or "0"
-                            local livePetString = string.format("%s (x%s)", petData.Name or "Unknown", multiplier)
-                            if currentEnchant ~= "" then livePetString = livePetString .. ": " .. currentEnchant end
+                            
+                            -- Use the helper function for display
+                            local calcMulti = getEffectiveMultiplier(petData)
+                            local multiplierStr = formatNumber(calcMulti)
+                            
+                            local livePetString = string.format("%s (x%s)", petData.Name or "Unknown", multiplierStr)
+                            if currentEnchant ~= "" then 
+                                livePetString = livePetString .. ": " .. currentEnchant 
+                            end
                             groupedPets[livePetString] = (groupedPets[livePetString] or 0) + 1
                         else
                             local strippedString = petString:match("^%d+%. (.+)") or petString
-                            groupedPets[strippedString] = (groupedPets[strippedString] or 0) + 1
+                            groupedPets[strippedString] = (groupedPets[groupedPets] or 0) + 1
                         end
                     end
                 end
-                if not hasSelection then content = content .. "None" else for pet,count in pairs(groupedPets) do content = content .. (count > 1 and tostring(count) .. "x " or "") .. pet .. "\n" end end
+                
+                if not hasSelection then 
+                    content = content .. "None" 
+                else 
+                    for pet, count in pairs(groupedPets) do 
+                        content = content .. (count > 1 and tostring(count) .. "x " or "") .. pet .. "\n" 
+                    end 
+                end
                 enchantStatusParagraph:SetContent(content)
             end
 
@@ -2356,8 +2419,6 @@ for attempt = 1, maxRetries do
                 end
             })
 
-
-
             local AutoUseBoostsSection = Tabs.Misc:AddSection("Auto Use Boosts")
 
             local Boosts = require(ReplicatedStorage.Game.Boosts)
@@ -2457,349 +2518,166 @@ for attempt = 1, maxRetries do
             })
 
             local EquipBestSection = Tabs.Misc:AddSection("Equip Best")
+            local Signal = require(ReplicatedStorage.Modules.Signal)
 
-            local autoEquipBestEnabled = false
-            local autoEquipBestThread = nil
-            local autoEquipCalculatedBestEnabled = false
-            local autoEquipCalculatedBestThread = nil
+            local function getPower(petData)
+                if petData.Multiplier1 and tonumber(petData.Multiplier1) > 0 then 
+                    return tonumber(petData.Multiplier1) 
+                end
+                local petName = petData.Name or "Unknown"
+                local petTier = petData.Tier or "Normal"
+                local petLevel = petData.Level or 1
+                local globalBestMulti = (Replication.Data.BestMultiplier and Replication.Data.BestMultiplier[1]) or 0
+                local petPercentage = PetStats:GetPercentage(petName)
+                local baseStat = petPercentage and (globalBestMulti * petPercentage / 100) or (petData.Multi1 or 0)
+                return PetStats:GetMulti(baseStat, petTier, petLevel, petData)
+            end
 
-            -- Declare toggles first so they can reference each other
-            local AutoEquipBestToggle
-            local AutoEquipCalculatedBestToggle
+            local function getMaxPotential(petData)
+                local petName = petData.Name or "Unknown"
+                local petTier = petData.Tier or "Normal"
+                local globalBestMulti = (Replication.Data.BestMultiplier and Replication.Data.BestMultiplier[1]) or 0
+                local petRarity = PetStats:GetRarity(petName)
+                local maxLevel = PetStats:GetMaxLevel(petRarity)
+                local petPercentage = PetStats:GetPercentage(petName)
+                local baseStat = petPercentage and (globalBestMulti * petPercentage / 100) or (petData.Multi1 or 0)
+                return PetStats:GetMulti(baseStat, petTier, maxLevel, petData)
+            end
+
+            local function equipTargetSet(targetIds)
+                local currentPets = Replication.Data.Pets
+                for petId, petData in pairs(currentPets) do
+                    if petData.Equipped and not targetIds[petId] then
+                        pcall(Network.InvokeServer, Network, "Unequip", petId)
+                        Signal.Fire("UnequipPetUI", petId)
+                        task.wait(0.1)
+                    end
+                end
+                task.wait(0.2)
+                for petId, _ in pairs(targetIds) do
+                    if not currentPets[petId].Equipped then
+                        pcall(Network.InvokeServer, Network, "Equip", petId)
+                        Signal.Fire("EquipPetUI", petId)
+                        task.wait(0.1)
+                    end
+                end
+            end
 
             AutoEquipBestToggle = EquipBestSection:AddToggle("AutoEquipBest", {
                 Title = "Auto Equip Best Pets",
                 Default = false,
                 Callback = function(Value)
                     autoEquipBestEnabled = Value
-                    
-                    -- Turn off the other toggle if this one is being enabled
-                    if Value and autoEquipCalculatedBestEnabled then
-                        AutoEquipCalculatedBestToggle:SetValue(false)
-                    end
-                    
-                    if Value and autoEquipLowestLevelEnabled then
-                        AutoEquipLowestLevelToggle:SetValue(false)
-                    end
-
-                    if autoEquipBestThread then
+                    if Value then
+                        if autoEquipCalculatedBestEnabled then AutoEquipCalculatedBestToggle:SetValue(false) end
+                        if autoEquipLowestLevelEnabled then AutoEquipLowestLevelToggle:SetValue(false) end
+                        autoEquipBestThread = task.spawn(function()
+                            while autoEquipBestEnabled do
+                                pcall(function()
+                                    repeat task.wait() until Replication.Loaded and Replication.Data
+                                    local bestIds = Network:InvokeServer("EquipBest")
+                                    if bestIds and type(bestIds) == "table" then
+                                        local targetIds = {}
+                                        for _, id in ipairs(bestIds) do targetIds[id] = true end
+                                        equipTargetSet(targetIds)
+                                    end
+                                end)
+                                task.wait(5)
+                            end
+                        end)
+                    elseif autoEquipBestThread then
                         task.cancel(autoEquipBestThread)
                         autoEquipBestThread = nil
                     end
-                    
+                end
+            })
+
+            AutoEquipCalculatedBestToggle = EquipBestSection:AddToggle("AutoEquipCalculatedBest", {
+                Title = "Auto Equip Calculated Best",
+                Default = false,
+                Callback = function(Value)
+                    autoEquipCalculatedBestEnabled = Value
                     if Value then
-                        autoEquipBestThread = task.spawn(function()
-                            local NetworkModule = require(ReplicatedStorage.Modules.Network)
-                            local ReplicationModule = require(ReplicatedStorage.Game.Replication)
-                            local SignalModule = require(ReplicatedStorage.Modules.Signal)
-                            
-                            while autoEquipBestEnabled do
+                        if autoEquipBestEnabled then AutoEquipBestToggle:SetValue(false) end
+                        if autoEquipLowestLevelEnabled then AutoEquipLowestLevelToggle:SetValue(false) end
+                        autoEquipCalculatedBestThread = task.spawn(function()
+                            while autoEquipCalculatedBestEnabled do
                                 pcall(function()
-                                    -- Wait for data to be ready
-                                    repeat task.wait() until ReplicationModule.Loaded and ReplicationModule.Data
-                                    
-                                    -- Call the server's EquipBest function
-                                    local bestPetIdsList = NetworkModule:InvokeServer("EquipBest")
-                                    
-                                    if bestPetIdsList and type(bestPetIdsList) == "table" then
-                                        local petDataTable = ReplicationModule.Data.Pets
-                                        
-                                        -- Create a set of best pet IDs for O(1) lookup
-                                        local bestPetSetTable = {}
-                                        for _, petIdValue in ipairs(bestPetIdsList) do
-                                            bestPetSetTable[petIdValue] = true
-                                        end
-                                        
-                                        -- Process all pets instantly
-                                        for petIdKey, petDataValue in pairs(petDataTable) do
-                                            local shouldBeEquippedBool = bestPetSetTable[petIdKey]
-                                            
-                                            -- Unequip pets that shouldn't be equipped
-                                            if petDataValue.Equipped and not shouldBeEquippedBool then
-                                                SignalModule.Fire("UnequipPetUI", petIdKey)
-                                            end
-                                            
-                                            -- Equip pets that should be equipped
-                                            if not petDataValue.Equipped and shouldBeEquippedBool then
-                                                SignalModule.Fire("EquipPetUI", petIdKey)
-                                            end
-                                        end
+                                    repeat task.wait() until Replication.Loaded and Replication.Data
+                                    local MAX = Replication.Data.EquipLimit or 5
+                                    local petList = {}
+                                    for id, data in pairs(Replication.Data.Pets) do
+                                        table.insert(petList, {id = id, pot = getMaxPotential(data), cur = getPower(data)})
                                     end
+                                    table.sort(petList, function(a, b)
+                                        return a.pot == b.pot and a.cur > b.cur or a.pot > b.pot
+                                    end)
+                                    local targetIds = {}
+                                    for i = 1, math.min(MAX, #petList) do targetIds[petList[i].id] = true end
+                                    equipTargetSet(targetIds)
                                 end)
-                                
-                                task.wait(5) 
+                                task.wait(5)
                             end
                         end)
+                    elseif autoEquipCalculatedBestThread then
+                        task.cancel(autoEquipCalculatedBestThread)
+                        autoEquipCalculatedBestThread = nil
                     end
                 end
             })
 
-        AutoEquipCalculatedBestToggle = EquipBestSection:AddToggle("AutoEquipCalculatedBest", {
-            Title = "Auto Equip Calculated Best",
-            Default = false,
-            Callback = function(Value)
-                autoEquipCalculatedBestEnabled = Value
-                
-                -- Turn off the other toggle if this one is being enabled
-                if Value and autoEquipBestEnabled then
-                    AutoEquipBestToggle:SetValue(false)
-                end
-
-                if Value and autoEquipLowestLevelEnabled then
-                    AutoEquipLowestLevelToggle:SetValue(false)
-                end
-                
-                if autoEquipCalculatedBestThread then
-                    task.cancel(autoEquipCalculatedBestThread)
-                    autoEquipCalculatedBestThread = nil
-                end
-                
-                if Value then
-                    autoEquipCalculatedBestThread = task.spawn(function()
-                        local NetworkModule = require(ReplicatedStorage.Modules.Network)
-                        local ReplicationModule = require(ReplicatedStorage.Game.Replication)
-                        local SignalModule = require(ReplicatedStorage.Modules.Signal)
-                        local PetStatsTiers = require(ReplicatedStorage.Game.PetStats.Tiers)
-                        
-                        -- Constants
-                        local MAX_LEVEL = 75
-                        local LEVEL_FORMULA_DIVISOR = 199
-                        
-                        -- Get tier multiplier from the game's Tiers module
-                        local function getTierMultiplier(tier)
-                            if not tier or tier == "Normal" then
-                                return 1
-                            end
-                            
-                            if PetStatsTiers[tier] and PetStatsTiers[tier][1] then
-                                return PetStatsTiers[tier][1]
-                            end
-                            
-                            return 1
-                        end
-                        
-                        -- Calculate max level stats
-                        local function getMaxLevelStats(currentMultiplier, currentLevel, tierMultiplier)
-                            local levelMultiplier = (1 + currentLevel / LEVEL_FORMULA_DIVISOR)
-                            local trueBase = currentMultiplier / (tierMultiplier * levelMultiplier)
-                            local maxLevelMultiplier = (1 + MAX_LEVEL / LEVEL_FORMULA_DIVISOR)
-                            return trueBase * tierMultiplier * maxLevelMultiplier
-                        end
-                        
-                        while autoEquipCalculatedBestEnabled do
-                            pcall(function()
-                                -- Wait for data to be ready
-                                repeat task.wait() until ReplicationModule.Loaded and ReplicationModule.Data
-                                
-                                -- Get max equipped pets limit
-                                local MAX_EQUIPPED_PETS = ReplicationModule.Data.EquipLimit or 5
-                                
-                                -- Calculate max stats for all pets
-                                local petList = {}
-                                
-                                for petId, petData in pairs(ReplicationModule.Data.Pets) do
-                                    local tier = petData.Tier or "Normal"
-                                    local tierMultiplier = getTierMultiplier(tier)
-                                    local currentLevel = petData.Level or 1
-                                    local currentMultiplier = petData.Multiplier1 or 0
-                                    
-                                    local maxStats = getMaxLevelStats(currentMultiplier, currentLevel, tierMultiplier)
-                                    
-                                    table.insert(petList, {
-                                        id = petId,
-                                        name = petData.Name or "Unknown",
-                                        maxStats = maxStats,
-                                        currentMultiplier = currentMultiplier,
-                                        currentLevel = currentLevel,
-                                        tier = tier,
-                                        equipped = petData.Equipped or false
-                                    })
-                                end
-                                
-                                -- Sort by max stats first, then by current multiplier, then by current level
-                                table.sort(petList, function(a, b)
-                                    -- Compare max stats with a very small tolerance
-                                    local maxDiff = math.abs(a.maxStats - b.maxStats)
-                                    
-                                    if maxDiff < 1 then  -- If max stats are essentially the same
-                                        -- Prioritize higher current multiplier
-                                        if math.abs(a.currentMultiplier - b.currentMultiplier) > 0.01 then
-                                            return a.currentMultiplier > b.currentMultiplier
+            AutoEquipLowestLevelToggle = EquipBestSection:AddToggle("AutoEquipLowestLevel", {
+                Title = "Auto Equip Lowest Level",
+                Default = false,
+                Callback = function(Value)
+                    autoEquipLowestLevelEnabled = Value
+                    if Value then
+                        if autoEquipBestEnabled then AutoEquipBestToggle:SetValue(false) end
+                        if autoEquipCalculatedBestEnabled then AutoEquipCalculatedBestToggle:SetValue(false) end
+                        autoEquipLowestLevelThread = task.spawn(function()
+                            while autoEquipLowestLevelEnabled do
+                                pcall(function()
+                                    repeat task.wait() until Replication.Loaded and Replication.Data
+                                    local MAX = Replication.Data.EquipLimit or 5
+                                    local leveling, maxed = {}, {}
+                                    for id, data in pairs(Replication.Data.Pets) do
+                                        if not data.Locked then
+                                            local maxLvl = PetStats:GetMaxLevel(PetStats:GetRarity(data.Name))
+                                            if (data.Level or 1) < maxLvl then
+                                                table.insert(leveling, {id = id, lvl = data.Level or 1})
+                                            else
+                                                table.insert(maxed, {id = id, pwr = getPower(data)})
+                                            end
                                         end
-                                        -- If current multipliers are also the same, prioritize higher level
-                                        return a.currentLevel > b.currentLevel
                                     end
-                                    
-                                    return a.maxStats > b.maxStats
+                                    table.sort(leveling, function(a, b) return a.lvl < b.lvl end)
+                                    table.sort(maxed, function(a, b) return a.pwr > b.pwr end)
+                                    local targetIds, count = {}, 0
+                                    for _, p in ipairs(leveling) do if count < MAX then targetIds[p.id] = true count = count + 1 end end
+                                    for _, p in ipairs(maxed) do if count < MAX then targetIds[p.id] = true count = count + 1 end end
+                                    equipTargetSet(targetIds)
                                 end)
-                                
-                                
-                                -- Get top pets based on EquipLimit
-                                local bestPetIds = {}
-                                for i = 1, math.min(MAX_EQUIPPED_PETS, #petList) do
-                                    bestPetIds[petList[i].id] = true
-                                end
-                                
-                                -- Get current pet data
-                                local petDataTable = ReplicationModule.Data.Pets
-                                
-                                -- First pass: Unequip pets that shouldn't be equipped
-                                for petId, petData in pairs(petDataTable) do
-                                    local shouldBeEquipped = bestPetIds[petId]
-                                    
-                                    if petData.Equipped and not shouldBeEquipped then
-                                        -- Send network request to unequip
-                                        pcall(function()
-                                            NetworkModule:InvokeServer("Unequip", petId)
-                                        end)
-                                        
-                                        -- Update UI
-                                        SignalModule.Fire("UnequipPetUI", petId)
-                                        
-                                        task.wait(0.1)
-                                    end
-                                end
-                                
-                                task.wait(0.5)
-                                
-                                -- Second pass: Equip pets that should be equipped
-                                for petId, petData in pairs(petDataTable) do
-                                    local shouldBeEquipped = bestPetIds[petId]
-                                    
-                                    if not petData.Equipped and shouldBeEquipped then
-                                        -- Send network request to equip
-                                        pcall(function()
-                                            NetworkModule:InvokeServer("Equip", petId)
-                                        end)
-                                        
-                                        -- Update UI
-                                        SignalModule.Fire("EquipPetUI", petId)
-                                        
-                                        task.wait(0.1)
-                                    end
-                                end
-                            end)
-                            
-                            task.wait(5) 
-                        end
-                    end)
+                                task.wait(5)
+                            end
+                        end)
+                    elseif autoEquipLowestLevelThread then
+                        task.cancel(autoEquipLowestLevelThread)
+                        autoEquipLowestLevelThread = nil
+                    end
                 end
-            end
-        })
-
-        AutoEquipLowestLevelToggle = EquipBestSection:AddToggle("AutoEquipLowestLevel", {
-            Title = "Auto Equip Lowest Level",
-            Default = false,
-            Callback = function(Value)
-                autoEquipLowestLevelEnabled = Value
-
-                if Value then
-                    if autoEquipBestEnabled then AutoEquipBestToggle:SetValue(false) end
-                    if autoEquipCalculatedBestEnabled then AutoEquipCalculatedBestToggle:SetValue(false) end
-                end
-
-                if autoEquipLowestLevelThread then
-                    task.cancel(autoEquipLowestLevelThread)
-                    autoEquipLowestLevelThread = nil
-                end
-
-                if Value then
-                    autoEquipLowestLevelThread = task.spawn(function()
-                        local NetworkModule = require(ReplicatedStorage.Modules.Network)
-                        local ReplicationModule = require(ReplicatedStorage.Game.Replication)
-                        local SignalModule = require(ReplicatedStorage.Modules.Signal)
-                        local PetStats = require(ReplicatedStorage.Game.PetStats)
-
-                        while autoEquipLowestLevelEnabled do
-                            pcall(function()
-                                repeat task.wait() until ReplicationModule.Loaded and ReplicationModule.Data
-                                
-                                local MAX_EQUIPPED_PETS = ReplicationModule.Data.EquipLimit or 5
-                                local levelingPets = {}
-                                local maxedPets = {}
-
-                                -- Categorize all pets
-                                for petId, petData in pairs(ReplicationModule.Data.Pets) do
-                                    if not petData.Locked then
-                                        local petName = petData.Name
-                                        local currentLevel = petData.Level or 1
-                                        local petRarity = PetStats:GetRarity(petName)
-                                        local maxLevel = PetStats:GetMaxLevel(petRarity)
-
-                                        if currentLevel < maxLevel then
-                                            table.insert(levelingPets, { id = petId, level = currentLevel, power = petData.Power or 0 })
-                                        else
-                                            table.insert(maxedPets, { id = petId, level = currentLevel, power = petData.Power or 0 })
-                                        end
-                                    end
-                                end
-
-                                table.sort(levelingPets, function(a, b) return a.level < b.level end)
-                                table.sort(maxedPets, function(a, b) return a.power > b.power end)
-
-                                local targetPetIds = {}
-                                local currentTargetCount = 0
-
-                                for i = 1, #levelingPets do
-                                    if currentTargetCount < MAX_EQUIPPED_PETS then
-                                        targetPetIds[levelingPets[i].id] = true
-                                        currentTargetCount = currentTargetCount + 1
-                                    end
-                                end
-
-                                for i = 1, #maxedPets do
-                                    if currentTargetCount < MAX_EQUIPPED_PETS then
-                                        targetPetIds[maxedPets[i].id] = true
-                                        currentTargetCount = currentTargetCount + 1
-                                    end
-                                end
-
-                                local currentPetData = ReplicationModule.Data.Pets
-
-                                for petId, petData in pairs(currentPetData) do
-                                    if petData.Equipped and not targetPetIds[petId] then
-                                        pcall(function()
-                                            NetworkModule:InvokeServer("Unequip", petId)
-                                            SignalModule.Fire("UnequipPetUI", petId)
-                                        end)
-                                        task.wait(0.1)
-                                    end
-                                end
-
-                                task.wait(0.3)
-
-                                for petId, _ in pairs(targetPetIds) do
-                                    local petInfo = currentPetData[petId]
-                                    if petInfo and not petInfo.Equipped then
-                                        pcall(function()
-                                            NetworkModule:InvokeServer("Equip", petId)
-                                            SignalModule.Fire("EquipPetUI", petId)
-                                        end)
-                                        task.wait(0.1)
-                                    end
-                                end
-                            end)
-                            task.wait(5) 
-                        end
-                    end)
-                end
-            end
-        })
-
-            EquipBestSection:AddParagraph("EquipBestInfo", {
-                Title = "Equip Best Info",
-                Content = "Auto Equip Calculated Best: Calculates the mathematically best pets based on max level potential (Level 50) - so if you have a 10x pet for example thats level 1, it will find what stat it will be at level 50, and equip it if this is better then your equipped pets. \n\nAuto Equip Lowest Level: Equips the lowest level pets you own, useful for leveling up pets quickly to get on leaderboards.",
-                TitleAlignment = "Middle"
             })
 
-            local DeletePetsSection = Tabs.Misc:AddSection("Delete Pets")
+            local function getAllPetsSorted()
+                repeat task.wait() until Replication.Loaded and Replication.Data
+                local pets = {}
+                for _, data in pairs(Replication.Data.Pets) do
+                    if not data.Locked then table.insert(pets, data) end
+                end
+                table.sort(pets, function(a, b) return getPower(a) < getPower(b) end)
+                return pets
+            end
 
-            local deleteClicksThreshold = 0
-            local deleteWeakestAmount = 0
-            local autoDeleteUnderThresholdEnabled = false
-            local autoDeleteWeakestEnabled = false
-            local autoDeleteUnderThresholdThread = nil
-            local autoDeleteWeakestThread = nil
+            local DeletePetsSection = Tabs.Misc:AddSection("Delete Pets")
 
             local function parseFormattedNumber(input)
                 if not input or input == "" then return 0 end
@@ -2814,25 +2692,6 @@ for attempt = 1, maxRetries do
                 return tonumber(input) or 0
             end
 
-            -- Get all pets sorted by Multiplier1 (weakest to strongest)
-            local function getAllPetsSorted()
-                repeat task.wait() until Replication.Loaded and Replication.Data
-                
-                local pets = {}
-                for petId, petData in pairs(Replication.Data.Pets) do
-                    if not petData.Locked then
-                        -- We can just insert the whole petData table
-                        table.insert(pets, petData)
-                    end
-                end
-                
-                table.sort(pets, function(a, b) 
-                    return (tonumber(a.Multiplier1) or 0) < (tonumber(b.Multiplier1) or 0)
-                end)
-                
-                return pets
-            end
-
             local deleteClicksInput = DeletePetsSection:AddInput("DeleteClicksInput", {
                 Title = "Delete Pets Under X Clicks",
                 Description = "e.g., 1.2k, 100, 1200",
@@ -2843,36 +2702,29 @@ for attempt = 1, maxRetries do
                 end
             })
 
-            local DeleteUnderThresholdToggle = DeletePetsSection:AddToggle("DeleteUnderThreshold", {
+            DeleteUnderThresholdToggle = DeletePetsSection:AddToggle("DeleteUnderThreshold", {
                 Title = "Auto Delete Under Threshold",
                 Default = false,
                 Callback = function(Value)
                     autoDeleteUnderThresholdEnabled = Value
-                    
-                    if autoDeleteUnderThresholdThread then
-                        task.cancel(autoDeleteUnderThresholdThread)
-                        autoDeleteUnderThresholdThread = nil
-                    end
-                    
                     if Value then
                         autoDeleteUnderThresholdThread = task.spawn(function()
-                            local Network = require(ReplicatedStorage.Modules.Network)
-                            
                             while autoDeleteUnderThresholdEnabled do
-                                repeat task.wait() until Replication.Loaded and Replication.Data
                                 local allPets = getAllPetsSorted()
-                                
                                 if deleteClicksThreshold > 0 then
                                     for _, pet in ipairs(allPets) do
-                                        if autoDeleteUnderThresholdEnabled and (tonumber(pet.Multiplier1) or 10000000000000000000000000000000) < deleteClicksThreshold then
+                                        if autoDeleteUnderThresholdEnabled and getPower(pet) < deleteClicksThreshold then
                                             pcall(Network.InvokeServer, Network, "DeletePet", pet.Id)
-                                            task.wait(0.25)
+                                            task.wait(0.2)
                                         end
                                     end
                                 end
                                 task.wait(5)
                             end
                         end)
+                    elseif autoDeleteUnderThresholdThread then
+                        task.cancel(autoDeleteUnderThresholdThread)
+                        autoDeleteUnderThresholdThread = nil
                     end
                 end
             })
