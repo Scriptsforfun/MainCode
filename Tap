@@ -289,28 +289,52 @@ for attempt = 1, maxRetries do
             local autoRebirthRunning = false
             local autoRebirthThread = nil
             local dropdownUpdateThread = nil
-            
+
             local Replication = require(ReplicatedStorage.Game.Replication)
             local Rebirths = require(ReplicatedStorage.Game.Rebirths)
             local Network = require(ReplicatedStorage.Modules.Network)
 
-            -- This function gets only the rebirths the player owns
+            local function formatSuffix(val)
+                local suffixes = {"", "k", "m", "b", "t", "qd", "qn", "sx", "sp", "oc"}
+                local i = 1
+                local num = val
+                while num >= 1000 and i < #suffixes do
+                    num = num / 1000
+                    i = i + 1
+                end
+                if i == 1 then return tostring(val) end
+                return string.format("%.1f%s", num, suffixes[i]):gsub("%.0", "")
+            end
+
+            local function formatCommas(val)
+                local str = tostring(val)
+                return str:reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
+            end
+
             local function getAllRebirthOptions()
                 local options = {}
                 pcall(function()
                     repeat task.wait() until Replication.Loaded and Replication.Data
-                    
                     local maxOptions = Replication.Data.RebirthOptions or 0
-                    
                     for i = 1, maxOptions do
                         local amount = Rebirths:fromIndex(i)
                         if amount then
                             local price = Rebirths:getPrice(amount)
+                            local displayStr
+                            
+                            if amount < 1000 then
+                                displayStr = string.format("+%d Rebirths", amount)
+                            else
+                                local shortStr = formatSuffix(amount)
+                                local fullStr = formatCommas(amount)
+                                displayStr = string.format("+%s (%s) Rebirths", shortStr, fullStr)
+                            end
+                            
                             table.insert(options, {
                                 index = i,
                                 amount = amount,
                                 price = price,
-                                display = string.format("+%s Rebirths", tostring(amount))
+                                display = displayStr
                             })
                         end
                     end
@@ -318,54 +342,31 @@ for attempt = 1, maxRetries do
                 return options
             end
 
-            -- Get the best rebirth the player can AFFORD from what they own
             GetBestAffordableRebirth = function()
                 local success, result = pcall(function()
                     repeat task.wait() until Replication.Loaded and Replication.Data
-                    
                     local currentRebirths = Replication.Data.Statistics.Rebirths or 0
                     local clicks = Replication.Data.Statistics.Clicks or 0
-
-
                     local bestIndex = nil
                     local bestAmount = 0
-
                     for _, option in ipairs(rebirthOptions) do
                         local clicksNeeded = Rebirths:ClicksPrice(option.price, currentRebirths)
-                        
-
                         if clicks >= clicksNeeded and option.amount > bestAmount then
                             bestAmount = option.amount
                             bestIndex = option.index
                         end
                     end
-                    
-                    if bestIndex then
-                    end
-                    
                     return bestIndex
                 end)
-
-                if not success then
-                end
-
                 return success and result or nil
             end
 
-            -- Get max unlocked rebirth (highest index the player owns)
             GetMaxUnlockedRebirth = function()
                 local success, result = pcall(function()
                     repeat task.wait() until Replication.Loaded and Replication.Data
-                    
                     local maxUnlocked = Replication.Data.RebirthOptions or 0
-
-                    if maxUnlocked > 0 then
-                        return maxUnlocked
-                    end
-                    
-                    return nil
+                    return maxUnlocked > 0 and maxUnlocked or nil
                 end)
-
                 return success and result or nil
             end
 
@@ -391,10 +392,7 @@ for attempt = 1, maxRetries do
                     rebirthIndex = rebirthOptions[selectedRebirthIndex].index
                 end
                 if rebirthIndex then
-                    local success = pcall(function()
-                        Network:InvokeServer("Rebirth", rebirthIndex)
-                    end)
-                    return success
+                    return pcall(function() Network:InvokeServer("Rebirth", rebirthIndex) end)
                 end
                 return false
             end
@@ -431,26 +429,25 @@ for attempt = 1, maxRetries do
                 Title = "Auto Rebirth", 
                 Default = false
             })
+        
+            RebirthSection:Paragraph("RebirthInfo", {
+            Title = "Rebirth Info",
+            Content = "Max Unlocked = Always uses your highest unlocked rebirth.\nDelay Input = Rebirths with the BEST AFFORDABLE rebirth every X seconds (leave empty or 0 to disable this)",
+            TitleAlignment = "Middle"
+          })
 
-            -- Initialize dropdown with actual game data
+
             task.spawn(function()
                 repeat task.wait() until Replication.Loaded and Replication.Data
                 pcall(updateRebirthDropdown)
             end)
 
-            -- Auto-update dropdown every 5 seconds
             dropdownUpdateThread = task.spawn(function()
                 while true do
                     task.wait(5)
                     pcall(updateRebirthDropdown)
                 end
             end)
-
-            RebirthSection:Paragraph("RebirthInfo", {
-                Title = "Rebirth Info",
-                Content = "Max Unlocked = Always uses your highest unlocked rebirth.\nDelay Input = Rebirths with the BEST AFFORDABLE rebirth every X seconds (leave empty or 0 to disable this)",
-                TitleAlignment = "Middle"
-            })
 
             AutoRebirth:OnChanged(function(Value)
                 autoRebirthRunning = Value
@@ -463,26 +460,16 @@ for attempt = 1, maxRetries do
                         while autoRebirthRunning do
                             local delayValue = rebirthDelayInput.Value
                             local delay = tonumber(delayValue)
-
                             if delayValue ~= "" and delay and delay > 0 then
-                                
                                 task.wait(delay)
-                                
-                                -- At the end of the delay, check best affordable rebirth
                                 local bestOption = GetBestAffordableRebirth()
                                 if bestOption then
-                                    pcall(function() 
-                                        Network:InvokeServer("Rebirth", bestOption) 
-                                    end)
+                                    pcall(function() Network:InvokeServer("Rebirth", bestOption) end)
                                 end
                             else
-                                if isMaxUnlockedSelected then
-                                    task.wait(0.2)
-                                end
-                                local result = pcall(performRebirth)
-                                if not isMaxUnlockedSelected then
-                                    task.wait(0.2)
-                                end
+                                if isMaxUnlockedSelected then task.wait(0.2) end
+                                pcall(performRebirth)
+                                if not isMaxUnlockedSelected then task.wait(0.2) end
                             end
                         end
                     end)
