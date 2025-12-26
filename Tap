@@ -2195,6 +2195,35 @@ for attempt = 1, maxRetries do
                 end
             })
 
+            local AutoSpinSection = Tabs.Misc:AddSection("Christmas Wheel")
+
+            local autoSpinEnabled = false
+            local autoSpinThread = nil
+
+            AutoSpinSection:AddToggle("AutoSpinWheelToggle", {
+                Title = "Auto Spin Christmas Wheel",
+                Default = false,
+                Callback = function(Value)
+                    autoSpinEnabled = Value
+
+                    if autoSpinThread then
+                        task.cancel(autoSpinThread)
+                        autoSpinThread = nil
+                    end
+                    
+                    if Value then
+                        autoSpinThread = task.spawn(function()
+                            while autoSpinEnabled do
+                                pcall(function()
+                                    Network:InvokeServer("SpinWheel")
+                                end)
+                                task.wait(5)
+                            end
+                        end)
+                    end
+                end
+            })
+
             RankRewardSection = Tabs.Misc:AddSection("Rank Reward")
 
             local autoClaimRankRewardEnabled = false
