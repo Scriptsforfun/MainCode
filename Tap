@@ -59,6 +59,25 @@ for attempt = 1, maxRetries do
         end
 
 
+        local function getPower(petData)
+            local PetStats = require(ReplicatedStorage.Game.PetStats)
+            
+            if petData.Multiplier1 and tonumber(petData.Multiplier1) > 0 then 
+                return tonumber(petData.Multiplier1) 
+            end
+            
+            local petName = petData.Name or "Unknown"
+            local petTier = petData.Tier or "Normal"
+            local petLevel = petData.Level or 1
+            
+            repeat task.wait() until Replication.Loaded and Replication.Data
+            
+            local globalBestMulti = (Replication.Data.BestMultiplier and Replication.Data.BestMultiplier[1]) or 0
+            local petPercentage = PetStats:GetPercentage(petName)
+            local baseStat = petPercentage and (globalBestMulti * petPercentage / 100) or (petData.Multi1 or 0)
+            return PetStats:GetMulti(baseStat, petTier, petLevel, petData)
+        end
+
 
         local Window, Tabs
         local BuildUI
@@ -1758,7 +1777,7 @@ for attempt = 1, maxRetries do
             })
 
             local EnchantSection = Tabs.Enchant:AddSection("Auto Enchant")
-            
+                        
             local selectedEnchants, selectedPets = {}, {}
             local enchantPetDropdown, enchantStatusParagraph = nil, nil
             local autoEnchantEnabled, autoEnchantThread, periodicUpdateThread = false, nil, nil
@@ -1771,19 +1790,39 @@ for attempt = 1, maxRetries do
                     liveEnchantData[petId] = petData.Enchant or ""
                 end
                 if enchantPetDropdown then
-                    enchantPetDropdown:SetValues(getFormattedPetList())
+                    task.defer(function()
+                        enchantPetDropdown:SetValues(getFormattedPetList())
+                    end)
                 end
             end)
 
             local function getEnchantNames()
                 local EnchantData = require(ReplicatedStorage.Game.EnchantData)
-                local enchantList = {}; if EnchantData and EnchantData.Enchants then for enchantName, _ in pairs(EnchantData.Enchants) do table.insert(enchantList, enchantName) end end
-                local nameOrder = { Taps=1, Gems=2, Rebirths=3, Luck=4 }; local tierOrder = { I=1, II=2, III=3 }
+                local enchantList = {}
+                if EnchantData and EnchantData.Enchants then
+                    for enchantName, _ in pairs(EnchantData.Enchants) do
+                        table.insert(enchantList, enchantName)
+                    end
+                end
+                local nameOrder = { Taps=1, Gems=2, Rebirths=3, Luck=4 }
+                local tierOrder = { I=1, II=2, III=3 }
                 table.sort(enchantList, function(a, b)
-                    local nameA,tierA=a:match("^(.-) (I+)$"); local nameB,tierB=b:match("^(.-) (I+)$"); if nameA and not nameB then return true end; if not nameA and nameB then return false end
-                    if nameA and nameB then local oA=nameOrder[nameA] or 99; local oB=nameOrder[nameB] or 99; if oA~=oB then return oA<oB else return(tierOrder[tierA] or 99)<(tierOrder[tierB] or 99) end end
+                    local nameA,tierA = a:match("^(.-) (I+)$")
+                    local nameB,tierB = b:match("^(.-) (I+)$")
+                    if nameA and not nameB then return true end
+                    if not nameA and nameB then return false end
+                    if nameA and nameB then
+                        local oA = nameOrder[nameA] or 99
+                        local oB = nameOrder[nameB] or 99
+                        if oA ~= oB then
+                            return oA < oB
+                        else
+                            return (tierOrder[tierA] or 99) < (tierOrder[tierB] or 99)
+                        end
+                    end
                     return a < b
-                end); return enchantList
+                end)
+                return enchantList
             end
 
             local PetStats = require(ReplicatedStorage.Game.PetStats)
@@ -1813,27 +1852,21 @@ for attempt = 1, maxRetries do
             local function getFormattedPetList()
                 repeat task.wait() until Replication.Loaded and Replication.Data and Replication.Data.Pets
                 petDropdownMap = {}
-                
                 local petsToSort = {}
-                for id, petData in pairs(Replication.Data.Pets) do 
-                    table.insert(petsToSort, petData) 
+                for id, petData in pairs(Replication.Data.Pets) do
+                    table.insert(petsToSort, petData)
                 end
-                
-                -- Use the helper function for sorting
-                table.sort(petsToSort, function(a, b) 
-                    return getEffectiveMultiplier(a) > getEffectiveMultiplier(b) 
+                table.sort(petsToSort, function(a, b)
+                    return getEffectiveMultiplier(a) > getEffectiveMultiplier(b)
                 end)
-                
                 local formattedList = {}
                 for i, petData in ipairs(petsToSort) do
                     local currentEnchant = liveEnchantData[petData.Id] or petData.Enchant or ""
                     local calcMulti = getEffectiveMultiplier(petData)
-                    
                     local petString = string.format("%s (x%s)", petData.Name or "Unknown", formatNumber(calcMulti))
-                    if currentEnchant ~= "" then 
-                        petString = petString .. ": " .. currentEnchant 
+                    if currentEnchant ~= "" then
+                        petString = petString .. ": " .. currentEnchant
                     end
-                    
                     local finalDropdownString = string.format("%d. %s", i, petString)
                     table.insert(formattedList, finalDropdownString)
                     petDropdownMap[finalDropdownString] = petData.Id
@@ -1850,26 +1883,22 @@ for attempt = 1, maxRetries do
                 local hasSelection = false
                 
                 for petString, isSelected in pairs(selectedPets) do
-                    if isSelected then 
+                    if isSelected then
                         hasSelection = true
                         local petId = petDropdownMap[petString]
-                        
                         if petId and Replication.Data.Pets[petId] then
                             local petData = Replication.Data.Pets[petId]
                             local currentEnchant = liveEnchantData[petId] or petData.Enchant or ""
-                            
-                            -- Use the helper function for display
                             local calcMulti = getEffectiveMultiplier(petData)
                             local multiplierStr = formatNumber(calcMulti)
-                            
                             local livePetString = string.format("%s (x%s)", petData.Name or "Unknown", multiplierStr)
-                            if currentEnchant ~= "" then 
-                                livePetString = livePetString .. ": " .. currentEnchant 
+                            if currentEnchant ~= "" then
+                                livePetString = livePetString .. ": " .. currentEnchant
                             end
                             groupedPets[livePetString] = (groupedPets[livePetString] or 0) + 1
                         else
                             local strippedString = petString:match("^%d+%. (.+)") or petString
-                            groupedPets[strippedString] = (groupedPets[groupedPets] or 0) + 1
+                            groupedPets[strippedString] = (groupedPets[strippedString] or 0) + 1
                         end
                     end
                 end
@@ -1880,33 +1909,86 @@ for attempt = 1, maxRetries do
                     for pet, count in pairs(groupedPets) do 
                         content = content .. (count > 1 and tostring(count) .. "x " or "") .. pet .. "\n" 
                     end 
-                end
-                enchantStatusParagraph:SetContent(content)
+                end     
+                pcall(function()
+                    enchantStatusParagraph:SetContent(content)
+                end)
             end
 
-            EnchantSection:Dropdown("SelectEnchantsDropdown", { Title="Select Desired Enchant(s)", Values=getEnchantNames(), Multi=true, Searchable=true, Default={}, Callback=function(v) selectedEnchants=v end })
-            enchantPetDropdown = EnchantSection:Dropdown("SelectPetsDropdown", { Title="Select Pet(s) to Enchant", Values=getFormattedPetList(), Multi=true, Searchable=true, Default={}, Callback=function(v) selectedPets=v;updateEnchantStatus() end })
-            EnchantSection:AddButton({ Title="Refresh Pets", Callback=function() if enchantPetDropdown then enchantPetDropdown:SetValues(getFormattedPetList()); enchantPetDropdown:SetValue({}); selectedPets={}; updateEnchantStatus() end end })
+            EnchantSection:Dropdown("SelectEnchantsDropdown", { 
+                Title = "Select Desired Enchant(s)", 
+                Values = getEnchantNames(), 
+                Multi = true, 
+                Searchable = true, 
+                Default = {}, 
+                Callback = function(v) 
+                    selectedEnchants = v 
+                end 
+            })
+
+            enchantPetDropdown = EnchantSection:Dropdown("SelectPetsDropdown", { 
+                Title = "Select Pet(s) to Enchant", 
+                Values = getFormattedPetList(), 
+                Multi = true, 
+                Searchable = true, 
+                Default = {}, 
+                Callback = function(v) 
+                    selectedPets = v
+                    updateEnchantStatus() 
+                end 
+            })
+
+            EnchantSection:AddButton({ 
+                Title = "Refresh Pets", 
+                Callback = function() 
+                    if enchantPetDropdown then 
+                        enchantPetDropdown:SetValues(getFormattedPetList())
+                        enchantPetDropdown:SetValue({})
+                        selectedPets = {}
+                        updateEnchantStatus() 
+                    end 
+                end 
+            })
 
             local AutoEnchantToggle = EnchantSection:AddToggle("AutoEnchantToggle", {
-                Title="Auto Enchant", Default=false,
-                Callback=function(Value)
-                    autoEnchantEnabled=Value; if periodicUpdateThread then task.cancel(periodicUpdateThread);periodicUpdateThread=nil end; if autoEnchantThread then task.cancel(autoEnchantThread);autoEnchantThread=nil end
+                Title = "Auto Enchant", 
+                Default = false,
+                Callback = function(Value)
+                    autoEnchantEnabled = Value
+                    
+                    if periodicUpdateThread then 
+                        task.cancel(periodicUpdateThread)
+                        periodicUpdateThread = nil 
+                    end
+                    
+                    if autoEnchantThread then 
+                        task.cancel(autoEnchantThread)
+                        autoEnchantThread = nil 
+                    end
+                    
                     if Value then
-                        if not next(selectedPets) or not next(selectedEnchants) then autoEnchantEnabled=false;task.spawn(function() task.wait(); end);return end
+                        if not next(selectedPets) or not next(selectedEnchants) then
+                            autoEnchantEnabled = false
+                            task.defer(function() 
+                                task.wait()
+                                AutoEnchantToggle:SetValue(false) 
+                            end)
+                            return
+                        end
                         
                         autoEnchantThread = task.spawn(function()
                             local original_InvokeServer = Network.InvokeServer
                             
                             while autoEnchantEnabled do
                                 local targetPet = nil
+                                
                                 for petString, isSelected in pairs(selectedPets) do
                                     if isSelected then
                                         local petId = petDropdownMap[petString]
                                         if petId and liveEnchantData[petId] then
                                             local currentEnchant = liveEnchantData[petId]
                                             if not selectedEnchants[currentEnchant] then
-                                                targetPet = {id = petId, name = Replication.Data.Pets[petId].Name}
+                                                targetPet = { id = petId, name = Replication.Data.Pets[petId].Name }
                                                 break
                                             end
                                         end
@@ -1914,15 +1996,20 @@ for attempt = 1, maxRetries do
                                 end
 
                                 local crystalCount = (Replication.Data.Items and Replication.Data.Items.EnchantCrystal) or 0
+                                
                                 if not targetPet then
-                                    enchantStatusParagraph:SetContent("Enchant Crystals: " .. crystalCount .. "\n\nAll selected pets have a desired enchant!")
+                                    task.defer(function()
+                                        enchantStatusParagraph:SetContent("Enchant Crystals: " .. crystalCount .. "\n\nAll selected pets have a desired enchant!")
+                                    end)
                                     task.wait(3)
                                 else
                                     if crystalCount > 0 then
                                         local currentTargetId = targetPet.id
                                         local lastEnchantResult = nil
                                         
-                                        enchantStatusParagraph:SetContent("Enchant Crystals: " .. crystalCount .. "\n\nAttempting to enchant: " .. targetPet.name)
+                                        task.defer(function()
+                                            enchantStatusParagraph:SetContent("Enchant Crystals: " .. crystalCount .. "\n\nAttempting to enchant: " .. targetPet.name)
+                                        end)
 
                                         Network.InvokeServer = function(self, eventName, ...)
                                             local result = original_InvokeServer(self, eventName, ...)
@@ -1930,7 +2017,9 @@ for attempt = 1, maxRetries do
                                                 lastEnchantResult = result
                                                 liveEnchantData[currentTargetId] = result
                                                 
-                                                Replication.Data.Pets[currentTargetId].Enchant = result
+                                                if Replication.Data.Pets[currentTargetId] then
+                                                    Replication.Data.Pets[currentTargetId].Enchant = result
+                                                end
 
                                                 Network.InvokeServer = original_InvokeServer
                                             end
@@ -1945,7 +2034,9 @@ for attempt = 1, maxRetries do
                                         Network.InvokeServer = original_InvokeServer
                                         
                                         if not lastEnchantResult then
-                                            enchantStatusParagraph:SetContent("Enchant Crystals: " .. crystalCount .. "\n\nHook timed out for: " .. targetPet.name .. ". Retrying.")
+                                            task.defer(function()
+                                                enchantStatusParagraph:SetContent("Enchant Crystals: " .. crystalCount .. "\n\nHook timed out for: " .. targetPet.name .. ". Retrying.")
+                                            end)
                                             task.wait(3)
                                         end
                                         
@@ -1954,7 +2045,14 @@ for attempt = 1, maxRetries do
                                             pcall(EnchantModule.selectPet, currentTargetId)
                                         end
                                     else
-                                        enchantStatusParagraph:SetContent("Out of Enchant Crystals! Stopping.")
+                                        task.defer(function()
+                                            enchantStatusParagraph:SetContent("Out of Enchant Crystals! Stopping.")
+                                        end)
+                                        task.defer(function() 
+                                            task.wait()
+                                            AutoEnchantToggle:SetValue(false) 
+                                        end)
+                                        break
                                     end
                                 end
                                 task.wait(1)
@@ -1962,15 +2060,30 @@ for attempt = 1, maxRetries do
                             Network.InvokeServer = original_InvokeServer
                         end)
                     else 
-                        periodicUpdateThread=task.spawn(function() while not autoEnchantEnabled do updateEnchantStatus();task.wait(5) end end) 
+                        periodicUpdateThread = task.spawn(function()
+                            while not autoEnchantEnabled do
+                                updateEnchantStatus()
+                                task.wait(5)
+                            end
+                        end) 
                     end
                 end
             })
-            
-            enchantStatusParagraph = EnchantSection:AddParagraph("EnchantStatus", { Title="Status", Content="Loading..." })
 
-            task.spawn(function() repeat task.wait() until Replication.Loaded and Replication.Data; updateEnchantStatus() end)
-            Replication:Connect("Items", function() if not autoEnchantEnabled then updateEnchantStatus() end end)
+            enchantStatusParagraph = EnchantSection:AddParagraph("EnchantStatus", { 
+                Title = "Status", 
+                Content = "Loading..." 
+            })
+
+            task.spawn(function() 
+                updateEnchantStatus() 
+            end)
+
+            Replication:Connect("Items", function() 
+                if not autoEnchantEnabled then 
+                    updateEnchantStatus() 
+                end 
+            end)
 
             local UnlockAll = Tabs.Misc:AddSection("Unlock All Zones")
 
@@ -2536,18 +2649,6 @@ for attempt = 1, maxRetries do
             local EquipBestSection = Tabs.Misc:AddSection("Equip Best")
             local Signal = require(ReplicatedStorage.Modules.Signal)
 
-            local function getPower(petData)
-                if petData.Multiplier1 and tonumber(petData.Multiplier1) > 0 then 
-                    return tonumber(petData.Multiplier1) 
-                end
-                local petName = petData.Name or "Unknown"
-                local petTier = petData.Tier or "Normal"
-                local petLevel = petData.Level or 1
-                local globalBestMulti = (Replication.Data.BestMultiplier and Replication.Data.BestMultiplier[1]) or 0
-                local petPercentage = PetStats:GetPercentage(petName)
-                local baseStat = petPercentage and (globalBestMulti * petPercentage / 100) or (petData.Multi1 or 0)
-                return PetStats:GetMulti(baseStat, petTier, petLevel, petData)
-            end
 
             local function getMaxPotential(petData)
                 local petName = petData.Name or "Unknown"
