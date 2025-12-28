@@ -1828,7 +1828,7 @@ for attempt = 1, maxRetries do
             }
 
             Tabs = {
-                Settings = Window:AddTab({ Title = "Settings", Icon = "phosphor-gear-bold" }),
+                Settings = Window:AddTab({ Title = "Settings", Icon = "settings" }),
                 Enchant = Window:AddTab({ Title = "Enchanting", Icon = "phosphor-magic-wand-bold" }),
                 Misc = Window:AddTab({ Title = "Misc", Icon = "sparkles" }),
                 Discord = Window:AddTab({ Title = "Webhook", Icon = "phosphor-discord-logo" })
