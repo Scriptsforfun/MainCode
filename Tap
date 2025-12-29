@@ -1272,16 +1272,16 @@ for attempt = 1, maxRetries do
                 Default = false,
                 Callback = function(Value)
                     autoRainbowEnabled = Value
-                    
+
                     if autoRainbowThread then
                         task.cancel(autoRainbowThread)
                         autoRainbowThread = nil
                     end
-                    
+
                     if Value then
                         autoRainbowThread = task.spawn(function()
                             local originalCFrame = nil
-                            
+
                             while autoRainbowEnabled do
                                 if not originalCFrame then
                                     local character = LocalPlayer.Character
@@ -1289,7 +1289,7 @@ for attempt = 1, maxRetries do
                                         originalCFrame = character:GetPivot()
                                     end
                                 end
-                                
+
                                 if autoCraftEnabled then
                                     local goldenPetsNeeded = 6
                                     if selectedChance:match("5%%") then
@@ -1305,29 +1305,28 @@ for attempt = 1, maxRetries do
                                     elseif selectedChance:match("100%%") then
                                         goldenPetsNeeded = 6
                                     end
-                                    
-                                    local movedToCandy = false
+
+                                    local movedToSpace = false
                                     local movedToGoldenMachine = false
-                                    
+
                                     while autoCraftEnabled and autoRainbowEnabled do
                                         local craftedThisLoop = false
-                                        
+
                                         for petName, isSelected in pairs(selectedPets) do
                                             if isSelected and autoRainbowEnabled and autoCraftEnabled then
                                                 repeat task.wait() until Replication.Loaded and Replication.Data
                                                 local petIds = getPetIdsForCraft(petName, goldenPetsNeeded)
-                                                
+
                                                 if #petIds >= goldenPetsNeeded then
-                                                    if not movedToCandy then
+                                                    if not movedToSpace then
                                                         local character = LocalPlayer.Character
                                                         if character and character:FindFirstChild("HumanoidRootPart") then
-                                                            local zones = getAllZones()
-                                                            for _, zone in ipairs(zones) do
-                                                                if zone.name == "Candy" then
+                                                            for _, zone in ipairs(getAllZones()) do
+                                                                if zone.name == "Space" then
                                                                     pcall(function()
                                                                         character:PivotTo(zone.cframe)
-                                                                    end) -- Fixed: Added ')'
-                                                                    movedToCandy = true
+                                                                    end)
+                                                                    movedToSpace = true
                                                                     task.wait(0.5)
                                                                     break
                                                                 end
@@ -1335,135 +1334,98 @@ for attempt = 1, maxRetries do
                                                         end
                                                     end
 
-                                                    local function findGoldenPart(folder)
-                                                        -- Recursive search for a "Golden" BasePart
-                                                        for _, child in ipairs(folder:GetChildren()) do
-                                                            if child:IsA("BasePart") and child.Name == "Golden" then
-                                                                return child
-                                                            elseif child:IsA("Model") then
-                                                                local result = findGoldenPart(child)
-                                                                if result then
-                                                                    return result
+                                                    local function findGoldenTopLevel()
+                                                        for _, inst in ipairs(workspace:GetChildren()) do
+                                                            if inst:IsA("Model") and not inst.Parent:IsA("Folder") then
+                                                                for _, obj in ipairs(inst:GetDescendants()) do
+                                                                    if obj:IsA("BasePart") and obj.Name == "Golden" then
+                                                                        return obj
+                                                                    end
                                                                 end
                                                             end
                                                         end
-                                                        return nil
                                                     end
 
                                                     local character = LocalPlayer.Character
                                                     if character and character:FindFirstChild("HumanoidRootPart") then
-                                                        local goldenPart
-
-                                                        -- First try workspace.Candy
-                                                        local candyFolder = workspace:FindFirstChild("Candy")
-                                                        if candyFolder then
-                                                            goldenPart = findGoldenPart(candyFolder)
-                                                        end
-
-                                                        -- If not found, try workspace.Island.Candy
-                                                        if not goldenPart then
-                                                            local islandCandy = workspace:FindFirstChild("Island") and workspace.Island:FindFirstChild("Candy")
-                                                            if islandCandy then
-                                                                goldenPart = findGoldenPart(islandCandy)
-                                                            end
-                                                        end
-
-                                                        -- Teleport to the golden part if found
+                                                        local goldenPart = findGoldenTopLevel()
                                                         if goldenPart then
                                                             local hrp = character.HumanoidRootPart
-                                                            local targetPos = goldenPart.Position
-                                                            local currentPos = hrp.Position
-
-                                                            if not movedToGoldenMachine or (currentPos - targetPos).Magnitude > 5 then
+                                                            if not movedToGoldenMachine
+                                                                or (hrp.Position - goldenPart.Position).Magnitude > 5 then
                                                                 pcall(function()
                                                                     character:PivotTo(goldenPart.CFrame * CFrame.new(0, 3, 0))
-                                                                end) -- Fixed: Added ')'
-
+                                                                end)
                                                                 movedToGoldenMachine = true
                                                                 task.wait(0.5)
                                                             end
                                                         end
-
-                                                        craftedThisLoop = true
-                                                        pcall(function()
-                                                            Network:InvokeServer("CraftPets", petIds)
-                                                        end)
-                                                        task.wait(1)
                                                     end
+
+                                                    craftedThisLoop = true
+                                                    pcall(function()
+                                                        Network:InvokeServer("CraftPets", petIds)
+                                                    end)
+                                                    task.wait(1)
                                                 end
                                             end
                                         end
-                                        
+
                                         if not craftedThisLoop then
                                             break
                                         end
                                     end
-                                    
+
                                     updatePetCount()
                                 end
-                                
+
                                 repeat task.wait() until Replication.Loaded and Replication.Data
-                                
                                 local crafting = getCurrentlyCrafting()
-                                
+
                                 local hasClaimable = false
-                                
                                 for _, craft in ipairs(crafting) do
                                     if craft.timeLeft <= 0 then
                                         hasClaimable = true
                                     end
                                 end
-                                
+
                                 local usedSlots = #crafting
                                 local maxSlots = 3
                                 local availableSlots = maxSlots - usedSlots
-                                
+
                                 if hasClaimable or availableSlots > 0 then
                                     local petsNeeded = 1
-                                    if selectedRainbowTime:match("1 Pet") then
-                                        petsNeeded = 1
-                                    elseif selectedRainbowTime:match("2 Pets") then
-                                        petsNeeded = 2
-                                    elseif selectedRainbowTime:match("3 Pets") then
-                                        petsNeeded = 3
-                                    elseif selectedRainbowTime:match("4 Pets") then
-                                        petsNeeded = 4
-                                    elseif selectedRainbowTime:match("5 Pets") then
-                                        petsNeeded = 5
-                                    end
-                                    
+                                    if selectedRainbowTime:match("2 Pets") then petsNeeded = 2
+                                    elseif selectedRainbowTime:match("3 Pets") then petsNeeded = 3
+                                    elseif selectedRainbowTime:match("4 Pets") then petsNeeded = 4
+                                    elseif selectedRainbowTime:match("5 Pets") then petsNeeded = 5 end
+
                                     local hasMovedToZone = false
                                     local hasMovedToMachine = false
-                                    
+
                                     if hasClaimable then
                                         for _, craft in ipairs(crafting) do
                                             if craft.timeLeft <= 0 then
                                                 pcall(function()
                                                     Network:InvokeServer("ClaimRainbow", craft.id)
-                                                end) -- Fixed: Added ')'
+                                                end)
                                                 task.wait(0.5)
                                             end
                                         end
-                                        
-                                        repeat task.wait() until Replication.Loaded and Replication.Data
-                                        crafting = getCurrentlyCrafting()
-                                        usedSlots = #crafting
-                                        availableSlots = maxSlots - usedSlots
                                     end
-                                    
+
                                     if availableSlots > 0 then
                                         for petName, isSelected in pairs(selectedRainbowPets) do
                                             if isSelected and autoRainbowEnabled and availableSlots > 0 then
                                                 repeat task.wait() until Replication.Loaded and Replication.Data
                                                 local petIds = getGoldenPetIdsForCraft(petName, petsNeeded)
-                                                
+
                                                 if #petIds >= petsNeeded then
                                                     if not hasMovedToZone then
                                                         local character = LocalPlayer.Character
                                                         if character and character:FindFirstChild("HumanoidRootPart") then
-                                                            local zones = getAllZones()
-                                                            for _, zone in ipairs(zones) do
-                                                                if zone.name == "Heaven" then
+                                                            for _, zone in ipairs(getAllZones()) do
+                                                                if zone.name == "Space" then
                                                                     pcall(function()
                                                                         character:PivotTo(zone.cframe)
                                                                     end)
@@ -1474,67 +1436,54 @@ for attempt = 1, maxRetries do
                                                             end
                                                         end
                                                     end
-                                                    
-                                                    local character = LocalPlayer.Character
-                                                    if character and character:FindFirstChild("HumanoidRootPart") then
-                                                        local map = workspace:FindFirstChild("Map")
-                                                        if map then
-                                                            local heavenFolder = map:FindFirstChild("Heaven")
-                                                            if heavenFolder then
-                                                                local rainbowPart = nil
-                                                                
-                                                                for _, descendant in ipairs(heavenFolder:GetDescendants()) do
-                                                                    if descendant.Name == "Rainbow" and (descendant:IsA("BasePart") or descendant:IsA("Model")) then
-                                                                        rainbowPart = descendant
-                                                                        break
-                                                                    end
-                                                                end
-                                                                
-                                                                if rainbowPart then
-                                                                    local targetCFrame
-                                                                    if rainbowPart:IsA("BasePart") then
-                                                                        targetCFrame = rainbowPart.CFrame
-                                                                    elseif rainbowPart:IsA("Model") and rainbowPart.PrimaryPart then
-                                                                        targetCFrame = rainbowPart:GetPivot()
-                                                                    elseif rainbowPart:IsA("Model") then
-                                                                        local firstPart = rainbowPart:FindFirstChildWhichIsA("BasePart", true)
-                                                                        if firstPart then
-                                                                            targetCFrame = firstPart.CFrame
-                                                                        end
-                                                                    end
-                                                                    
-                                                                    if targetCFrame then
-                                                                        local targetPos = targetCFrame.Position
-                                                                        local currentPos = character.HumanoidRootPart.Position
-                                                                        local xDiff = math.abs(currentPos.X - targetPos.X)
-                                                                        local zDiff = math.abs(currentPos.Z - targetPos.Z)
-                                                                        
-                                                                        if not hasMovedToMachine or xDiff > 5 or zDiff > 5 then
-                                                                            pcall(function()
-                                                                                character:PivotTo(targetCFrame + Vector3.new(0, 3, 0))
-                                                                            end) -- Fixed: Added ')'
-                                                                            hasMovedToMachine = true
-                                                                            task.wait(0.5)
-                                                                        end
+
+                                                    local function findRainbowTopLevel()
+                                                        for _, inst in ipairs(workspace:GetChildren()) do
+                                                            if inst:IsA("Model") and not inst.Parent:IsA("Folder") then
+                                                                for _, obj in ipairs(inst:GetDescendants()) do
+                                                                    if obj.Name == "Rainbow" and (obj:IsA("BasePart") or obj:IsA("Model")) then
+                                                                        return obj
                                                                     end
                                                                 end
                                                             end
                                                         end
                                                     end
-                                                    
+
+                                                    local character = LocalPlayer.Character
+                                                    if character and character:FindFirstChild("HumanoidRootPart") then
+                                                        local rainbowObj = findRainbowTopLevel()
+                                                        if rainbowObj then
+                                                            local cf
+                                                            if rainbowObj:IsA("BasePart") then
+                                                                cf = rainbowObj.CFrame
+                                                            else
+                                                                cf = rainbowObj:GetPivot()
+                                                            end
+                                                            local hrp = character.HumanoidRootPart
+                                                            if not hasMovedToMachine
+                                                                or (hrp.Position - cf.Position).Magnitude > 5 then
+                                                                pcall(function()
+                                                                    character:PivotTo(cf + Vector3.new(0, 3, 0))
+                                                                end)
+                                                                hasMovedToMachine = true
+                                                                task.wait(0.5)
+                                                            end
+                                                        end
+                                                    end
+
                                                     pcall(function()
                                                         Network:InvokeServer("StartRainbow", petIds)
-                                                    end) 
-                                                    availableSlots = availableSlots - 1
+                                                    end)
+                                                    availableSlots -= 1
                                                     task.wait(1)
                                                 end
                                             end
                                         end
                                     end
                                 end
-                                
+
                                 updateRainbowStatus()
-                                
+
                                 if originalCFrame then
                                     local character = LocalPlayer.Character
                                     if character and character:FindFirstChild("HumanoidRootPart") then
@@ -1544,22 +1493,13 @@ for attempt = 1, maxRetries do
                                     end
                                     originalCFrame = nil
                                 end
-                                
+
                                 task.wait(5)
-                            end
-                            
-                            if originalCFrame then
-                                local character = LocalPlayer.Character
-                                if character and character:FindFirstChild("HumanoidRootPart") then
-                                    pcall(function()
-                                        character:PivotTo(originalCFrame)
-                                    end)
-                                end
                             end
                         end)
                     end
                 end
-            }) 
+            })
 
             RainbowSection:AddParagraph("RainbowInfo",{
                 Title = "Note",
@@ -1609,20 +1549,19 @@ for attempt = 1, maxRetries do
                 Default = false,
                 Callback = function(Value)
                     autoCraftEnabled = Value
-                    
+
                     if autoCraftThread then
                         task.cancel(autoCraftThread)
                         autoCraftThread = nil
                     end
-                    
+
                     if Value then
                         autoCraftThread = task.spawn(function()
                             local originalCFrame = nil
                             local hasMovedToZone = false
                             local hasMovedToMachine = false
-                            
+
                             while autoCraftEnabled do
-                                -- Determine how many pets needed based on chance
                                 local petsNeeded = 6
                                 if selectedChance:match("5%%") then
                                     petsNeeded = 1
@@ -1637,34 +1576,27 @@ for attempt = 1, maxRetries do
                                 elseif selectedChance:match("100%%") then
                                     petsNeeded = 6
                                 end
-                                
+
                                 local craftedAny = false
-                                
-                                -- Craft each selected pet type
+
                                 for petName, isSelected in pairs(selectedPets) do
                                     if isSelected and autoCraftEnabled then
-                                        -- Refresh data
                                         repeat task.wait() until Replication.Loaded and Replication.Data
-                                        
-                                        -- Get IDs for this pet
                                         local petIds = getPetIdsForCraft(petName, petsNeeded)
-                                        
+
                                         if #petIds >= petsNeeded then
-                                            -- Save original position only once
                                             if not originalCFrame then
                                                 local character = LocalPlayer.Character
                                                 if character and character:FindFirstChild("HumanoidRootPart") then
                                                     originalCFrame = character:GetPivot()
                                                 end
                                             end
-                                            
-                                            -- Teleport to Candy zone only once
+
                                             if not hasMovedToZone then
                                                 local character = LocalPlayer.Character
                                                 if character and character:FindFirstChild("HumanoidRootPart") then
-                                                    local zones = getAllZones()
-                                                    for _, zone in ipairs(zones) do
-                                                        if zone.name == "Candy" then
+                                                    for _, zone in ipairs(getAllZones()) do
+                                                        if zone.name == "Space" then
                                                             pcall(function()
                                                                 character:PivotTo(zone.cframe)
                                                             end)
@@ -1676,51 +1608,29 @@ for attempt = 1, maxRetries do
                                                 end
                                             end
 
-                                            local function findGoldenPart(folder)
-                                                -- Recursive search for a "Golden" BasePart
-                                                for _, child in ipairs(folder:GetChildren()) do
-                                                    if child:IsA("BasePart") and child.Name == "Golden" then
-                                                        return child
-                                                    elseif child:IsA("Model") then
-                                                        local result = findGoldenPart(child)
-                                                        if result then
-                                                            return result
+                                            local function findGoldenTopLevel()
+                                                for _, inst in ipairs(workspace:GetChildren()) do
+                                                    if inst:IsA("Model") and not inst.Parent:IsA("Folder") then
+                                                        for _, obj in ipairs(inst:GetDescendants()) do
+                                                            if obj:IsA("BasePart") and obj.Name == "Golden" then
+                                                                return obj
+                                                            end
                                                         end
                                                     end
                                                 end
-                                                return nil
                                             end
 
                                             local character = LocalPlayer.Character
                                             if character and character:FindFirstChild("HumanoidRootPart") then
-                                                local goldenPart
-
-                                                -- First try workspace.Candy
-                                                local candyFolder = workspace:FindFirstChild("Candy")
-                                                if candyFolder then
-                                                    goldenPart = findGoldenPart(candyFolder)
-                                                end
-
-                                                -- If not found, try workspace.Island.Candy
-                                                if not goldenPart then
-                                                    local islandCandy = workspace:FindFirstChild("Island") and workspace.Island:FindFirstChild("Candy")
-                                                    if islandCandy then
-                                                        goldenPart = findGoldenPart(islandCandy)
-                                                    end
-                                                end
-
-                                                -- Teleport to the golden part if found
+                                                local goldenPart = findGoldenTopLevel()
                                                 if goldenPart then
                                                     local hrp = character.HumanoidRootPart
-                                                    local targetPos = goldenPart.Position
-                                                    local currentPos = hrp.Position
-
-                                                    if not movedToGoldenMachine or (currentPos - targetPos).Magnitude > 5 then
+                                                    if not hasMovedToMachine
+                                                        or (hrp.Position - goldenPart.Position).Magnitude > 5 then
                                                         pcall(function()
                                                             character:PivotTo(goldenPart.CFrame * CFrame.new(0, 3, 0))
                                                         end)
-
-                                                        movedToGoldenMachine = true
+                                                        hasMovedToMachine = true
                                                         task.wait(0.5)
                                                     end
                                                 end
@@ -1730,16 +1640,14 @@ for attempt = 1, maxRetries do
                                             pcall(function()
                                                 Network:InvokeServer("CraftPets", petIds)
                                             end)
-                                            
-                                            task.wait(1) -- Wait between crafts
+                                            task.wait(1)
                                         end
                                     end
                                 end
-                                
+
                                 updatePetCount()
 
                                 if not craftedAny then
-                                    -- No more pets to craft, return to original position
                                     if originalCFrame then
                                         local character = LocalPlayer.Character
                                         if character and character:FindFirstChild("HumanoidRootPart") then
@@ -1756,8 +1664,7 @@ for attempt = 1, maxRetries do
                                     task.wait(2)
                                 end
                             end
-                            
-                            -- Return to original position when toggle is disabled
+
                             if originalCFrame then
                                 local character = LocalPlayer.Character
                                 if character and character:FindFirstChild("HumanoidRootPart") then
@@ -1770,6 +1677,7 @@ for attempt = 1, maxRetries do
                     end
                 end
             })
+
 
             ParagraphGolden = CraftingSection:AddParagraph("GoldenInfo",{
                 Title = "Note",
